@@ -17,6 +17,12 @@ cbuffer ConstantBuffer : register(b0)
 	float4x4 projection;
 };
 
+cbuffer ConstantBuffer2 : register(b1)
+{
+	uint r1;
+	uint r2;
+};
+
 struct PSInput
 {
 	float4 position : SV_POSITION;

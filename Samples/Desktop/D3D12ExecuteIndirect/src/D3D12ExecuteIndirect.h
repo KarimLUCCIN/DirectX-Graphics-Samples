@@ -22,6 +22,10 @@ using namespace DirectX;
 // An example of this can be found in the class method: OnDestroy().
 using Microsoft::WRL::ComPtr;
 
+#define INDIRECT_INDEXED_DRAW
+
+#define NUM_ROOT_CONSTANTS 1
+
 class D3D12ExecuteIndirect : public DXSample
 {
 public:
@@ -75,13 +79,24 @@ private:
 	struct IndirectCommand
 	{
 		D3D12_GPU_VIRTUAL_ADDRESS cbv;
+		UINT32 rootConstant[NUM_ROOT_CONSTANTS];
+		D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+#ifndef INDIRECT_INDEXED_DRAW
 		D3D12_DRAW_ARGUMENTS drawArguments;
+#else
+		D3D12_INDEX_BUFFER_VIEW indexBufferView;
+		D3D12_DRAW_INDEXED_ARGUMENTS drawIndexedArguments;
+#if NUM_ROOT_CONSTANTS > 1
+		UINT32 _padding[5 - NUM_ROOT_CONSTANTS];
+#endif
+#endif
 	};
 
 	// Graphics root signature parameter offsets.
 	enum GraphicsRootParameters
 	{
 		Cbv,
+		RootConstant,
 		GraphicsRootParametersCount
 	};
 
@@ -142,6 +157,9 @@ private:
 	ComPtr<ID3D12GraphicsCommandList> m_commandList;
 	ComPtr<ID3D12GraphicsCommandList> m_computeCommandList;
 	ComPtr<ID3D12Resource> m_vertexBuffer;
+#ifdef INDIRECT_INDEXED_DRAW
+	ComPtr<ID3D12Resource> m_indexBuffer;
+#endif
 	ComPtr<ID3D12Resource> m_constantBuffer;
 	ComPtr<ID3D12Resource> m_depthStencil;
 	ComPtr<ID3D12Resource> m_commandBuffer;

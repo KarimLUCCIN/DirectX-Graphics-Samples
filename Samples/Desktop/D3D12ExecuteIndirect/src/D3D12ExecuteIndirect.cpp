@@ -195,7 +195,8 @@ void D3D12ExecuteIndirect::LoadAssets()
 	{
 		CD3DX12_ROOT_PARAMETER rootParameters[GraphicsRootParametersCount];
 		rootParameters[Cbv].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-
+		rootParameters[RootConstant].InitAsConstants(NUM_ROOT_CONSTANTS, 1, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+		
 		CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
 		rootSignatureDesc.Init(_countof(rootParameters), rootParameters, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
@@ -287,20 +288,25 @@ void D3D12ExecuteIndirect::LoadAssets()
 	// We will flush the GPU at the end of this method to ensure the resources are not
 	// prematurely destroyed.
 	ComPtr<ID3D12Resource> vertexBufferUpload;
+	ComPtr<ID3D12Resource> indexBufferUpload;
 	ComPtr<ID3D12Resource> commandBufferUpload;
 
 	// Create the vertex buffer.
+	Vertex triangleVertices[] =
+	{
+		{ { 0.0f, TriangleHalfWidth, TriangleDepth } },
+		{ { TriangleHalfWidth, -TriangleHalfWidth, TriangleDepth } },
+		{ { -TriangleHalfWidth, -TriangleHalfWidth, TriangleDepth } }
+	};
+	const UINT vertexBufferSize = sizeof(triangleVertices);
+
+	UINT triangleIndices[] =
+	{
+		0, 1, 2
+	};
+	const UINT indexBufferSize = sizeof(triangleIndices);
 	{
 		// Define the geometry for a triangle.
-		Vertex triangleVertices[] =
-		{
-			{ { 0.0f, TriangleHalfWidth, TriangleDepth } },
-			{ { TriangleHalfWidth, -TriangleHalfWidth, TriangleDepth } },
-			{ { -TriangleHalfWidth, -TriangleHalfWidth, TriangleDepth } }
-		};
-
-		const UINT vertexBufferSize = sizeof(triangleVertices);
-
 		ThrowIfFailed(m_device->CreateCommittedResource(
 			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
 			D3D12_HEAP_FLAG_NONE,
@@ -333,6 +339,38 @@ void D3D12ExecuteIndirect::LoadAssets()
 		m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
 		m_vertexBufferView.StrideInBytes = sizeof(Vertex);
 		m_vertexBufferView.SizeInBytes = sizeof(triangleVertices);
+
+
+#ifdef INDIRECT_INDEXED_DRAW
+		// Define the indices for a triangle.
+		ThrowIfFailed(m_device->CreateCommittedResource(
+			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+			D3D12_HEAP_FLAG_NONE,
+			&CD3DX12_RESOURCE_DESC::Buffer(indexBufferSize),
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			nullptr,
+			IID_PPV_ARGS(&m_indexBuffer)));
+
+		ThrowIfFailed(m_device->CreateCommittedResource(
+			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+			D3D12_HEAP_FLAG_NONE,
+			&CD3DX12_RESOURCE_DESC::Buffer(indexBufferSize),
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&indexBufferUpload)));
+
+		NAME_D3D12_OBJECT(m_indexBuffer);
+
+		// Copy data to the intermediate upload heap and then schedule a copy
+		// from the upload heap to the vertex buffer.
+		D3D12_SUBRESOURCE_DATA indexData = {};
+		indexData.pData = reinterpret_cast<UINT8*>(triangleIndices);
+		indexData.RowPitch = indexBufferSize;
+		indexData.SlicePitch = indexData.RowPitch;
+
+		UpdateSubresources<1>(m_commandList.Get(), m_indexBuffer.Get(), indexBufferUpload.Get(), 0, 0, 1, &indexData);
+		m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_indexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER));
+#endif
 	}
 
 	// Create the depth stencil view.
@@ -415,10 +453,26 @@ void D3D12ExecuteIndirect::LoadAssets()
 	// Create the command signature used for indirect drawing.
 	{
 		// Each command consists of a CBV update and a DrawInstanced call.
-		D3D12_INDIRECT_ARGUMENT_DESC argumentDescs[2] = {};
-		argumentDescs[0].Type = D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW;
-		argumentDescs[0].ConstantBufferView.RootParameterIndex = Cbv;
-		argumentDescs[1].Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW;
+#ifndef INDIRECT_INDEXED_DRAW
+		D3D12_INDIRECT_ARGUMENT_DESC argumentDescs[3] = {};
+#else
+		D3D12_INDIRECT_ARGUMENT_DESC argumentDescs[5] = {};
+#endif
+		int argumentIndex = 0;
+		argumentDescs[argumentIndex].Type = D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW;
+		argumentDescs[argumentIndex++].ConstantBufferView.RootParameterIndex = Cbv;
+		argumentDescs[argumentIndex].Type = D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT;
+		argumentDescs[argumentIndex].Constant.RootParameterIndex = RootConstant;
+		argumentDescs[argumentIndex].Constant.Num32BitValuesToSet = NUM_ROOT_CONSTANTS;
+		argumentDescs[argumentIndex++].Constant.DestOffsetIn32BitValues = 0;
+		argumentDescs[argumentIndex].Type = D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW;
+		argumentDescs[argumentIndex++].VertexBuffer.Slot = 0;
+#ifndef INDIRECT_INDEXED_DRAW
+		argumentDescs[argumentIndex++].Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW;
+#else
+		argumentDescs[argumentIndex++].Type = D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW;
+		argumentDescs[argumentIndex++].Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
+#endif
 
 		D3D12_COMMAND_SIGNATURE_DESC commandSignatureDesc = {};
 		commandSignatureDesc.pArgumentDescs = argumentDescs;
@@ -462,10 +516,26 @@ void D3D12ExecuteIndirect::LoadAssets()
 			for (UINT n = 0; n < TriangleCount; n++)
 			{
 				commands[commandIndex].cbv = gpuAddress;
+
+				commands[commandIndex].vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
+				commands[commandIndex].vertexBufferView.SizeInBytes = vertexBufferSize;
+				commands[commandIndex].vertexBufferView.StrideInBytes = sizeof(Vertex);
+#ifndef INDIRECT_INDEXED_DRAW
 				commands[commandIndex].drawArguments.VertexCountPerInstance = 3;
 				commands[commandIndex].drawArguments.InstanceCount = 1;
 				commands[commandIndex].drawArguments.StartVertexLocation = 0;
 				commands[commandIndex].drawArguments.StartInstanceLocation = 0;
+#else
+				commands[commandIndex].indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
+				commands[commandIndex].indexBufferView.SizeInBytes = indexBufferSize;
+				commands[commandIndex].indexBufferView.Format = DXGI_FORMAT_R32_UINT;
+
+				commands[commandIndex].drawIndexedArguments.IndexCountPerInstance = 3;
+				commands[commandIndex].drawIndexedArguments.InstanceCount = 1;
+				commands[commandIndex].drawIndexedArguments.BaseVertexLocation = 0;
+				commands[commandIndex].drawIndexedArguments.StartIndexLocation = 0;
+				commands[commandIndex].drawIndexedArguments.StartInstanceLocation = 0;
+#endif
 
 				commandIndex++;
 				gpuAddress += sizeof(ConstantBufferData);
@@ -741,8 +811,9 @@ void D3D12ExecuteIndirect::PopulateCommandLists()
 		m_commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
 		m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+#ifndef INDIRECT_INDEXED_DRAW
 		m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
-
+#endif
 		if (m_enableCulling)
 		{
 			PIXBeginEvent(m_commandList.Get(), 0, L"Draw visible triangles");

@@ -11,6 +11,8 @@
 
 #define threadBlockSize 128
 
+#define NUM_ROOT_CONSTANTS 1 // switch between 1 and 2 to see the effect of the root constant change
+
 struct ConstantBufferData
 {
 	float4 velocity;
@@ -20,10 +22,25 @@ struct ConstantBufferData
 	float4 padding[9];
 };
 
+#define INDIRECT_INDEXED_DRAW
+
 struct IndirectCommand
 {
 	uint2 cbvAddress;
+	uint rootConstant[NUM_ROOT_CONSTANTS];
+	uint4 vertexBufferView;
+#ifdef INDIRECT_INDEXED_DRAW
+	uint4 indexBufferView;
+#endif
 	uint4 drawArguments;
+#ifdef INDIRECT_INDEXED_DRAW
+	uint drawArguments2;
+#endif
+
+	// is removed when NUM_ROOT_CONSTANTS is 1
+#if NUM_ROOT_CONSTANTS > 1
+	uint _padding[5 - NUM_ROOT_CONSTANTS];
+#endif
 };
 
 cbuffer RootConstants : register(b0)
