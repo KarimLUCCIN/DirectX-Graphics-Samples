@@ -11,7 +11,7 @@
 
 #define threadBlockSize 128
 
-#define NUM_ROOT_CONSTANTS 1 // switch between 1 and 2 to see the effect of the root constant change
+#define NUM_ROOT_CONSTANTS 2 // switch between 1 and 2 to see the effect of the root constant change
 
 struct ConstantBufferData
 {

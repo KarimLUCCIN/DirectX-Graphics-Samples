@@ -24,7 +24,7 @@ using Microsoft::WRL::ComPtr;
 
 #define INDIRECT_INDEXED_DRAW
 
-#define NUM_ROOT_CONSTANTS 1
+#define NUM_ROOT_CONSTANTS 2
 
 class D3D12ExecuteIndirect : public DXSample
 {
