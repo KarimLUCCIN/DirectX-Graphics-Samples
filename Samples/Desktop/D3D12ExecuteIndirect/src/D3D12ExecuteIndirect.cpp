@@ -9,6 +9,8 @@
 //
 //*********************************************************
 
+// https://github.com/Microsoft/DirectX-Graphics-Samples/issues/138
+
 #include "stdafx.h"
 #include "D3D12ExecuteIndirect.h"
 
@@ -299,10 +301,10 @@ void D3D12ExecuteIndirect::LoadAssets()
 		{ { -TriangleHalfWidth, -TriangleHalfWidth, TriangleDepth } }
 	};
 	const UINT vertexBufferSize = sizeof(triangleVertices);
-
-	UINT triangleIndices[] =
+	using IndexType = uint16_t;
+	uint16_t triangleIndices[] =
 	{
-		0, 1, 2
+		99, 99, 99, 0, 1, 2
 	};
 	const UINT indexBufferSize = sizeof(triangleIndices);
 	{
@@ -528,12 +530,12 @@ void D3D12ExecuteIndirect::LoadAssets()
 #else
 				commands[commandIndex].indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
 				commands[commandIndex].indexBufferView.SizeInBytes = indexBufferSize;
-				commands[commandIndex].indexBufferView.Format = DXGI_FORMAT_R32_UINT;
+				commands[commandIndex].indexBufferView.Format = DXGI_FORMAT_R16_UINT;
 
 				commands[commandIndex].drawIndexedArguments.IndexCountPerInstance = 3;
 				commands[commandIndex].drawIndexedArguments.InstanceCount = 1;
 				commands[commandIndex].drawIndexedArguments.BaseVertexLocation = 0;
-				commands[commandIndex].drawIndexedArguments.StartIndexLocation = 0;
+				commands[commandIndex].drawIndexedArguments.StartIndexLocation = 3;
 				commands[commandIndex].drawIndexedArguments.StartInstanceLocation = 0;
 #endif
 
@@ -814,7 +816,7 @@ void D3D12ExecuteIndirect::PopulateCommandLists()
 #ifndef INDIRECT_INDEXED_DRAW
 		m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
 #endif
-		if (m_enableCulling)
+		if (false && m_enableCulling)
 		{
 			PIXBeginEvent(m_commandList.Get(), 0, L"Draw visible triangles");
 
