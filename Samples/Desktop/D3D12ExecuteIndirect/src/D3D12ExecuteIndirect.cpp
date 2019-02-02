@@ -834,13 +834,22 @@ void D3D12ExecuteIndirect::PopulateCommandLists()
 			PIXBeginEvent(m_commandList.Get(), 0, L"Draw all triangles");
 
 			// Draw all of the triangles.
-			m_commandList->ExecuteIndirect(
+			for (int i = 0; i < TriangleCount; i++) {
+				m_commandList->ExecuteIndirect(
+					m_commandSignature.Get(),
+					1,
+					m_commandBuffer.Get(),
+					(i * sizeof(IndirectCommand)) * m_frameIndex,
+					nullptr,
+					0);
+			}
+			/*m_commandList->ExecuteIndirect(
 				m_commandSignature.Get(),
 				TriangleCount,
 				m_commandBuffer.Get(),
 				CommandBufferSizePerFrame * m_frameIndex,
 				nullptr,
-				0);
+				0);*/
 		}
 		PIXEndEvent(m_commandList.Get());
 
